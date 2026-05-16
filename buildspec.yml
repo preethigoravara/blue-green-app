@@ -1,16 +1,55 @@
 version: 0.2
+
 phases:
+
   pre_build:
     commands:
-      - aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_URI
+      - echo "Logging into Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - REPOSITORY_URI=$ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPO
       - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_URI=$REPOSITORY_URI:$IMAGE_TAG
+
   build:
     commands:
-      - docker build -t $ECR_URI:$IMAGE_TAG .
-      - docker push $ECR_URI:$IMAGE_TAG
+      - echo "Building Docker image..."
+      - docker build -t $ECR_REPO .
+      - docker tag $ECR_REPO:$IMAGE_TAG $IMAGE_URI
+
   post_build:
     commands:
-      - printf '[{"name":"web-container","imageUri":"%s"}]' $ECR_URI:$IMAGE_TAG > imagedefinitions.json
+      - echo "Pushing image to ECR..."
+      - docker push $IMAGE_URI
+
+      - echo "Fetching current task definition..."
+      - TASK_DEF=$(aws ecs describe-task-definition --task-definition blue-green-task --query taskDefinition)
+
+      - echo "Registering new task definition with updated image..."
+      - NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$IMAGE_URI" '
+          .containerDefinitions[0].image = $IMAGE
+          | del(
+              .taskDefinitionArn,
+              .revision,
+              .status,
+              .requiresAttributes,
+              .compatibilities,
+              .registeredAt,
+              .registeredBy
+            )')
+
+      - echo "$NEW_TASK_DEF" > new-task-def.json
+
+      - NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+          --cli-input-json file://new-task-def.json \
+          --query 'taskDefinition.taskDefinitionArn' \
+          --output text)
+
+      - echo "Updating ECS service with new task definition..."
+      - aws ecs update-service \
+          --cluster $CLUSTER_NAME \
+          --service $SERVICE_NAME \
+          --task-definition $NEW_TASK_DEF_ARN
+
 artifacts:
   files:
-    - imagedefinitions.json
+    - '**/*'
