@@ -39,10 +39,7 @@ phases:
 
       # ✅ Get current task definition (ONLY clean portion)
       - echo "Fetching current task definition..."
-      - aws ecs describe-task-definition \
-          --task-definition $TASK_FAMILY \
-          --query "taskDefinition" \
-          > task-def.json
+      - aws ecs describe-task-definition --task-definition $TASK_FAMILY --query "taskDefinition" > task-def.json
 
       # ✅ Update container image
       - echo "Updating task definition with new image..."
