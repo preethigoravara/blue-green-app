@@ -1,6 +1,6 @@
 const http = require('http');
 const server = http.createServer((req, res) => {
   res.writeHead(200, {'Content-Type': 'text/html'});
-  res.end('<h1 style="color:black">Black version - v2.0</h1>');
+  res.end('<h1 style="color:Green">Green version - v3.0</h1>');
 });
 server.listen(80, () => console.log('Server running on port 80'));
